@@ -1,3 +1,6 @@
+
+https://github.com/dihoyt/claudeai/blob/main/Lunch%20%26%20Learn/howitsmade.md
+
 # Claude AI Projects Repository
 
 A centralized collection of Claude AI resources including agent prompts, automation scripts, workflows, MCP servers, and tools for enhancing Claude-powered development.
