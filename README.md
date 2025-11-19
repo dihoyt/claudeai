@@ -1,5 +1,4 @@
-
-https://github.com/dihoyt/claudeai/blob/main/Lunch%20%26%20Learn/howitsmade.md
+[How It's Made](https://github.com/dihoyt/claudeai/blob/main/Lunch%20%26%20Learn/howitsmade.md)
 
 # Claude AI Projects Repository
 
