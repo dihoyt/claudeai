@@ -30,7 +30,7 @@ claudeai/
 Clone this repository:
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/dihoyt/claudeai/
 cd claudeai
 ```
 
