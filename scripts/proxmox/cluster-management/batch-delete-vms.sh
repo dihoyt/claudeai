@@ -8,7 +8,8 @@
 # Usage: ./batch-delete-vms.sh
 ################################################################################
 
-set -e
+# Note: set -e is NOT used here to allow the script to continue
+# deleting VMs even if one deletion fails
 
 # Color codes for output
 RED='\033[0;31m'
