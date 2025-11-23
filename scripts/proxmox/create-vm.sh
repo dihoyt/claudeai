@@ -150,7 +150,7 @@ create_vm() {
     log "Creating VM $NEW_VM_ID from template $TEMPLATE_ID..."
 
     # Build the clone command
-    CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME --storage local-lvm $CLONE_PARAM"
+    CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME $CLONE_PARAM"
 
     info "Executing: $CMD"
     echo ""

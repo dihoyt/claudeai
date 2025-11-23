@@ -32,19 +32,22 @@ TARGET_DIR="/volume1/scripts"  # Modify this to your desired location
    chmod +x sync-scripts-repo.sh
    ```
 
-2. Run the script:
+2. Run the script manually:
    ```bash
    ./sync-scripts-repo.sh
    ```
 
-3. (Optional) Set up a scheduled task in Synology DSM:
+3. Set up as a scheduled task in Synology DSM (configured as "quick-sync"):
    - Open Control Panel > Task Scheduler
    - Create > Scheduled Task > User-defined script
+   - Task name: `quick-sync`
    - Set the schedule (e.g., daily at 2:00 AM)
    - In the "Task Settings" tab, enter:
      ```bash
-     bash /path/to/sync-scripts-repo.sh
+     bash /volume1/scripts/synology/sync-scripts-repo.sh
      ```
+
+   **Note:** This scheduled task is already configured on the Synology NAS to keep scripts automatically synchronized.
 
 **What it does:**
 1. Clones the repository to a temporary directory
