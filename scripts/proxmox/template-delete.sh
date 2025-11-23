@@ -47,15 +47,22 @@ list_templates() {
     echo -e "${BLUE}Available Templates:${NC}"
     echo "================================================================================"
 
-    # List all templates
-    qm list | head -1  # Header
+    # List all templates with header
+    qm list | head -1
 
-    # Get templates (grep will filter lines containing 'template')
-    TEMPLATE_LIST=$(qm list | grep template)
+    # Get templates by checking each VM's config
+    TEMPLATES_FOUND=0
+    while IFS= read -r line; do
+        vmid=$(echo "$line" | awk '{print $1}')
 
-    if [ -n "$TEMPLATE_LIST" ]; then
-        echo "$TEMPLATE_LIST"
-    else
+        # Check if it's a template
+        if qm config "$vmid" 2>/dev/null | grep -q "template: 1"; then
+            echo "$line"
+            TEMPLATES_FOUND=1
+        fi
+    done < <(qm list | grep -v VMID)
+
+    if [ "$TEMPLATES_FOUND" -eq 0 ]; then
         warn "No templates found"
         echo "================================================================================"
         echo ""
