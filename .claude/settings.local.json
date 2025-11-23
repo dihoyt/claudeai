@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(mkdir:*)",
-      "Bash(pwsh -Command:*)"
+      "Bash(pwsh -Command:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []
