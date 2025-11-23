@@ -49,8 +49,12 @@ list_templates() {
 
     # List all templates
     qm list | head -1  # Header
-    if qm list | grep template | tail -n +2 > /dev/null 2>&1; then
-        qm list | grep template | tail -n +2
+
+    # Get templates (grep will filter lines containing 'template')
+    TEMPLATE_LIST=$(qm list | grep template)
+
+    if [ -n "$TEMPLATE_LIST" ]; then
+        echo "$TEMPLATE_LIST"
     else
         warn "No templates found"
         echo "================================================================================"
