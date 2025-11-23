@@ -41,8 +41,8 @@ run_service() {
         error "Script not found: $script_path"
     fi
 
-    # Make script executable
-    chmod +x "$script_path"
+    # Note: Scripts are assumed to be already executable
+    # chmod +x "$script_path"
 
     # Run the script and capture output
     local start_time=$(date +%s)
