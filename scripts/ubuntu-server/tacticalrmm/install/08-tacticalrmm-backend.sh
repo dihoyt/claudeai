@@ -52,6 +52,7 @@ main() {
     cd "${INSTALL_DIR}/api/tacticalrmm"
 
     sudo -u tactical /bin/bash <<EOF
+set -e
 source ${INSTALL_DIR}/env/bin/activate
 pip install --upgrade pip
 pip install wheel setuptools
@@ -63,6 +64,20 @@ EOF
     if [[ $? -ne 0 ]]; then
         error "Failed to install Python dependencies"
     fi
+
+    # Verify gunicorn installation
+    log "Verifying gunicorn installation..."
+    if [[ ! -f "${INSTALL_DIR}/env/bin/gunicorn" ]]; then
+        error "Gunicorn binary not found at ${INSTALL_DIR}/env/bin/gunicorn"
+    fi
+
+    # Test gunicorn execution
+    log "Testing gunicorn execution..."
+    if ! sudo -u tactical "${INSTALL_DIR}/env/bin/gunicorn" --version &>/dev/null; then
+        error "Gunicorn cannot be executed by tactical user"
+    fi
+
+    log "Gunicorn installed and verified successfully"
 
     # Create Django settings
     log "Configuring Django settings..."
