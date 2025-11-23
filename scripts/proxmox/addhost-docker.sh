@@ -229,6 +229,10 @@ create_vm() {
     fi
 
     show_progress 2 "done" "VM cloned successfully"
+
+    # Give the system a moment to register the new VM
+    sleep 5
+
     return 0
 }
 
@@ -238,6 +242,9 @@ start_vm() {
     if qm start "$NEW_VM_ID" >/dev/null 2>&1; then
         show_progress 3 "done" "VM started"
         VM_STARTED=true
+
+        # Give the VM time to boot before checking for IP
+        sleep 10
     else
         show_progress 3 "error" "Failed to start VM"
         error "Failed to start VM"
