@@ -6,7 +6,7 @@
 # Creates a new VM by cloning an existing template with interactive prompts
 # for configuration values.
 #
-# Usage: ./create-vm.sh
+# Usage: ./vm-create.sh
 ################################################################################
 
 set -e
@@ -16,6 +16,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 ################################################################################
@@ -37,6 +38,10 @@ warn() {
 
 info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+highlight() {
+    echo -e "${CYAN}$1${NC}"
 }
 
 ################################################################################
@@ -167,7 +172,7 @@ create_vm() {
 
 start_vm() {
     echo ""
-    read -p "Start the VM now? [Y/n]: " -n 1 START_VM
+    read -p "Start the VM now? [Y/n]: " START_VM
     echo ""
 
     if [[ ! $START_VM =~ ^[Nn]$ ]]; then
@@ -238,32 +243,64 @@ show_vm_info() {
         echo "  Status:       Stopped"
     fi
     echo ""
+    if [ -n "$VM_IP" ]; then
+        echo ""
+        echo "================================================================================"
+        highlight "                    VM IP Address: $VM_IP"
+        echo "================================================================================"
+    fi
+    echo ""
     echo "Next steps:"
     echo ""
-    echo "1. Configure Cloud-Init (if template supports it):"
-    echo -e "   ${YELLOW}Navigate to VM $NEW_VM_ID -> Cloud-Init tab in Proxmox GUI${NC}"
-    echo ""
-    echo "2. Adjust VM resources if needed:"
-    echo -e "   ${YELLOW}qm set $NEW_VM_ID --memory <MB> --cores <NUM>${NC}"
-    echo ""
-    if [ "$VM_STARTED" = true ]; then
+    if [ "$VM_STARTED" = true ] && [ -n "$VM_IP" ]; then
+        echo "1. Complete Ubuntu VM setup (cloud-init, reboot, SSH):"
+        echo -e "   ${YELLOW}./ubuntu-vm-setup.sh $VM_IP${NC}"
+        echo ""
+        echo "2. Adjust VM resources if needed:"
+        echo -e "   ${YELLOW}qm set $NEW_VM_ID --memory <MB> --cores <NUM>${NC}"
+        echo ""
         echo "3. Open console:"
         echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
-        if [ -n "$VM_IP" ]; then
-            echo ""
-            echo "4. Connect via SSH (if configured):"
-            echo -e "   ${YELLOW}ssh user@$VM_IP${NC}"
-        fi
     else
-        echo "3. Start the VM:"
+        echo "1. Start the VM:"
         echo -e "   ${YELLOW}qm start $NEW_VM_ID${NC}"
         echo ""
-        echo "4. Open console:"
+        echo "2. Adjust VM resources if needed:"
+        echo -e "   ${YELLOW}qm set $NEW_VM_ID --memory <MB> --cores <NUM>${NC}"
+        echo ""
+        echo "3. Open console:"
         echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
     fi
     echo ""
     echo "================================================================================"
     echo ""
+}
+
+run_vm_setup() {
+    if [ "$VM_STARTED" != true ] || [ -z "$VM_IP" ]; then
+        return 0
+    fi
+
+    # Get the directory where this script is located
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SETUP_SCRIPT="$SCRIPT_DIR/jobs/ubuntu-vm-setup.sh"
+
+    if [ ! -f "$SETUP_SCRIPT" ]; then
+        warn "ubuntu-vm-setup.sh not found at: $SETUP_SCRIPT"
+        echo ""
+        echo "Run manually with: ./jobs/ubuntu-vm-setup.sh $VM_IP"
+        echo ""
+        return 1
+    fi
+
+    echo ""
+    echo "================================================================================"
+    log "Starting automated VM setup..."
+    echo "================================================================================"
+    echo ""
+
+    # Run the setup script
+    "$SETUP_SCRIPT" "$VM_IP"
 }
 
 ################################################################################
@@ -319,6 +356,9 @@ main() {
 
     # Show results
     show_vm_info
+
+    # Automatically run ubuntu-vm-setup.sh if VM was started and has IP
+    run_vm_setup
 }
 
 main "$@"

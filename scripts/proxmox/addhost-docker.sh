@@ -3,10 +3,16 @@
 ################################################################################
 # Proxmox Docker Host Creation Script
 #
-# Creates a new Docker host VM by cloning template 201 with automatic naming
-# based on existing docker-* VMs.
+# Unattended creation of Docker host VMs by cloning template 201 with
+# automatic naming based on existing docker-* VMs.
 #
-# Usage: ./new-docker-host.sh
+# Features:
+#  - Fully automated (no prompts)
+#  - Automatic VM naming (docker-01, docker-02, etc.)
+#  - Auto-start VM
+#  - Clean progress display
+#
+# Usage: ./docker-addhost.sh
 ################################################################################
 
 set -e
@@ -16,6 +22,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -42,6 +49,10 @@ warn() {
 
 info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+highlight() {
+    echo -e "${CYAN}$1${NC}"
 }
 
 ################################################################################
@@ -115,58 +126,79 @@ get_new_vm_id() {
 }
 
 ################################################################################
+# Progress Display
+################################################################################
+
+show_progress() {
+    local step=$1
+    local status=$2
+    local message=$3
+
+    case $status in
+        "running")
+            echo -ne "\r  [$step/5] $message..."
+            ;;
+        "done")
+            echo -e "\r  [$step/5] ${GREEN}✓${NC} $message"
+            ;;
+        "error")
+            echo -e "\r  [$step/5] ${RED}✗${NC} $message"
+            ;;
+    esac
+}
+
+################################################################################
 # VM Creation
 ################################################################################
 
 verify_template() {
-    log "Verifying template $TEMPLATE_ID exists..."
+    show_progress 1 "running" "Verifying template"
 
     if ! qm status "$TEMPLATE_ID" &>/dev/null; then
+        show_progress 1 "error" "Template $TEMPLATE_ID not found"
         error "Template $TEMPLATE_ID not found"
     fi
 
     # Check if it's actually a template
     if ! qm config "$TEMPLATE_ID" | grep -q "template: 1"; then
+        show_progress 1 "error" "VM $TEMPLATE_ID is not a template"
         error "VM $TEMPLATE_ID exists but is not a template"
     fi
 
-    log "Template $TEMPLATE_ID verified"
+    show_progress 1 "done" "Template verified"
 }
 
 create_vm() {
-    log "Creating VM $NEW_VM_ID ($VM_NAME) from template $TEMPLATE_ID..."
+    show_progress 2 "running" "Cloning VM $NEW_VM_ID ($VM_NAME)"
 
     # Build the clone command (full clone)
     CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME --full 1"
 
-    info "Executing: $CMD"
-    echo ""
-
-    # Execute the clone command
-    if eval "$CMD"; then
-        log "VM created successfully!"
+    # Execute the clone command with progress monitoring
+    if eval "$CMD" >/dev/null 2>&1; then
+        show_progress 2 "done" "VM cloned successfully"
         return 0
     else
+        show_progress 2 "error" "Failed to clone VM"
         error "Failed to create VM"
         return 1
     fi
 }
 
 start_vm() {
-    log "Starting VM $NEW_VM_ID..."
-    if qm start "$NEW_VM_ID"; then
-        log "VM started successfully!"
-        VM_STARTED=true
+    show_progress 3 "running" "Starting VM"
 
-        # Wait for VM to boot and get IP address
-        wait_for_ip
+    if qm start "$NEW_VM_ID" >/dev/null 2>&1; then
+        show_progress 3 "done" "VM started"
+        VM_STARTED=true
     else
+        show_progress 3 "error" "Failed to start VM"
         error "Failed to start VM"
     fi
 }
 
 wait_for_ip() {
-    info "Waiting for VM to boot and acquire IP address..."
+    show_progress 4 "running" "Waiting for IP address"
 
     local max_attempts=60  # Wait up to 60 seconds
     local attempt=0
@@ -179,69 +211,71 @@ wait_for_ip() {
                 grep -v "127.0.0.1" | head -1)
 
         if [ -n "$VM_IP" ]; then
-            log "VM IP address acquired: $VM_IP"
+            show_progress 4 "done" "IP address acquired: $VM_IP"
             return 0
         fi
 
-        # Show progress
-        echo -n "."
         sleep 1
         ((attempt++))
     done
 
-    echo ""
-    warn "Timeout waiting for IP address. The VM may still be booting."
-    warn "Note: QEMU Guest Agent must be installed and running in the VM to retrieve IP address."
+    show_progress 4 "error" "Timeout waiting for IP address"
+    warn "Note: QEMU Guest Agent must be installed and running in the VM"
     return 1
+}
+
+finalize() {
+    show_progress 5 "done" "Docker host ready"
 }
 
 show_vm_info() {
     echo ""
+    echo ""
     echo "================================================================================"
-    echo -e "                    ${GREEN}Docker Host VM Created Successfully!${NC}"
+    echo -e "                    ${GREEN}Docker Host Created${NC}"
     echo "================================================================================"
     echo ""
-    echo "VM Details:"
-    echo "  VM ID:        $NEW_VM_ID"
-    echo "  Name:         $VM_NAME"
-    echo "  Node:         $NODE_NAME"
-    echo "  Clone Type:   Full Clone"
-    echo "  Template:     $TEMPLATE_ID"
-    if [ "$VM_STARTED" = true ]; then
-        echo "  Status:       Running"
-        if [ -n "$VM_IP" ]; then
-            echo "  IP Address:   $VM_IP"
-        fi
-    else
-        echo "  Status:       Stopped"
-    fi
+    echo "  VM ID:    $NEW_VM_ID"
+    echo "  Name:     $VM_NAME"
+    echo "  Status:   Running"
     echo ""
-    echo "Next steps:"
-    echo ""
-    echo "1. Adjust VM resources if needed:"
-    echo -e "   ${YELLOW}qm set $NEW_VM_ID --memory <MB> --cores <NUM>${NC}"
-    echo ""
-    if [ "$VM_STARTED" = true ]; then
-        echo "2. Open console:"
-        echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
-        if [ -n "$VM_IP" ]; then
-            echo ""
-            echo "3. Connect via SSH (if configured):"
-            echo -e "   ${YELLOW}ssh user@$VM_IP${NC}"
-            echo ""
-            echo "4. Verify Docker installation:"
-            echo -e "   ${YELLOW}docker --version${NC}"
-        fi
-    else
-        echo "2. Start the VM:"
-        echo -e "   ${YELLOW}qm start $NEW_VM_ID${NC}"
+    if [ -n "$VM_IP" ]; then
+        echo "================================================================================"
+        highlight "                    IP Address: $VM_IP"
+        echo "================================================================================"
         echo ""
-        echo "3. Open console:"
-        echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
+    else
+        echo "IP address not yet available. Check with:"
+        echo -e "  ${YELLOW}qm guest cmd $NEW_VM_ID network-get-interfaces${NC}"
+        echo ""
+        echo "================================================================================"
+        echo ""
     fi
+}
+
+run_vm_setup() {
+    if [ -z "$VM_IP" ]; then
+        warn "No IP address available, skipping ubuntu-vm-setup.sh"
+        return 1
+    fi
+
+    # Get the directory where this script is located
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SETUP_SCRIPT="$SCRIPT_DIR/jobs/ubuntu-vm-setup.sh"
+
+    if [ ! -f "$SETUP_SCRIPT" ]; then
+        warn "ubuntu-vm-setup.sh not found at: $SETUP_SCRIPT"
+        echo ""
+        echo "Run manually with: ./jobs/ubuntu-vm-setup.sh $VM_IP"
+        echo ""
+        return 1
+    fi
+
+    echo "Starting VM setup process..."
     echo ""
-    echo "================================================================================"
-    echo ""
+
+    # Run the setup script
+    "$SETUP_SCRIPT" "$VM_IP"
 }
 
 ################################################################################
@@ -249,24 +283,32 @@ show_vm_info() {
 ################################################################################
 
 main() {
-    log "Creating new Docker host VM from template $TEMPLATE_ID..."
+    echo "================================================================================"
+    echo "                    Creating Docker Host"
+    echo "================================================================================"
+    echo ""
 
-    # Verify template exists
+    # Gather info silently
+    get_node >/dev/null 2>&1
+    get_next_docker_number >/dev/null 2>&1
+    get_new_vm_id >/dev/null 2>&1
+
+    # Show what we're creating
+    echo "  Creating: $VM_NAME (VM ID: $NEW_VM_ID)"
+    echo ""
+
+    # Execute steps with progress
     verify_template
-
-    # Gather info
-    get_node
-    get_next_docker_number
-    get_new_vm_id
-
-    # Create the VM
     create_vm
-
-    # Start the VM
     start_vm
+    wait_for_ip
+    finalize
 
     # Show results
     show_vm_info
+
+    # Automatically run ubuntu-vm-setup.sh
+    run_vm_setup
 }
 
 main "$@"
