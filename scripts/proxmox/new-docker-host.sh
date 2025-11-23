@@ -1,12 +1,12 @@
 #!/bin/bash
 
 ################################################################################
-# Proxmox VM Creation Script
+# Proxmox Docker Host Creation Script
 #
-# Creates a new VM by cloning an existing template with interactive prompts
-# for configuration values.
+# Creates a new Docker host VM by cloning template 104 with automatic naming
+# based on existing docker-* VMs.
 #
-# Usage: ./create-vm.sh
+# Usage: ./new-docker-host.sh
 ################################################################################
 
 set -e
@@ -17,6 +17,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Configuration
+TEMPLATE_ID=104
+VM_PREFIX="docker"
 
 ################################################################################
 # Helper Functions
@@ -43,114 +47,103 @@ info() {
 # Input Functions
 ################################################################################
 
-get_template_id() {
+get_node() {
     echo ""
-    echo -e "${BLUE}Available Templates:${NC}"
+    echo -e "${BLUE}Available Nodes:${NC}"
 
-    # List all VMs and identify templates
-    qm list | head -1
-    TEMPLATES_FOUND=0
-    qm list | grep -v VMID | while read line; do
-        vmid=$(echo "$line" | awk '{print $1}')
-        if qm config "$vmid" 2>/dev/null | grep -q "template: 1"; then
-            echo "$line [TEMPLATE]"
-            TEMPLATES_FOUND=1
-        fi
-    done
-
-    # Check if any templates were found
-    if ! qm list | grep -v VMID | while read line; do
-        vmid=$(echo "$line" | awk '{print $1}')
-        qm config "$vmid" 2>/dev/null | grep -q "template: 1" && exit 0
-    done; then
-        warn "No templates found"
-    fi
+    # List all cluster nodes
+    pvesh get /nodes --output-format json | grep -oP '"node"\s*:\s*"\K[^"]+' 2>/dev/null || {
+        # Fallback if JSON parsing fails - get local node
+        CURRENT_NODE=$(hostname)
+        echo "  - $CURRENT_NODE (current)"
+    }
 
     echo ""
 
     while true; do
-        read -p "Enter Template ID: " TEMPLATE_ID
+        read -p "Enter target node name: " NODE_NAME
 
-        # Validate template exists
-        if qm status "$TEMPLATE_ID" &>/dev/null; then
-            # Check if it's actually a template
-            if qm config "$TEMPLATE_ID" | grep -q "template: 1"; then
-                log "Template $TEMPLATE_ID found"
-                break
-            else
-                error "VM $TEMPLATE_ID exists but is not a template"
-            fi
+        if [ -z "$NODE_NAME" ]; then
+            warn "Node name cannot be empty. Please try again."
+            continue
+        fi
+
+        # Verify node exists
+        if pvesh get /nodes/$NODE_NAME/status &>/dev/null; then
+            log "Target node: $NODE_NAME"
+            break
         else
-            warn "Template ID $TEMPLATE_ID not found. Please try again."
+            warn "Node '$NODE_NAME' not found. Please try again."
         fi
     done
+}
+
+get_next_docker_number() {
+    log "Scanning for existing docker-* VMs..."
+
+    # Get all VM names and find docker-XX pattern
+    HIGHEST_NUM=0
+
+    while read -r line; do
+        vmid=$(echo "$line" | awk '{print $1}')
+        if [ -n "$vmid" ]; then
+            vm_name=$(qm config "$vmid" 2>/dev/null | grep "^name:" | awk '{print $2}')
+
+            # Check if name matches docker-XX pattern
+            if [[ "$vm_name" =~ ^docker-([0-9]+)$ ]]; then
+                num="${BASH_REMATCH[1]}"
+                # Remove leading zeros for comparison
+                num=$((10#$num))
+                if [ "$num" -gt "$HIGHEST_NUM" ]; then
+                    HIGHEST_NUM=$num
+                fi
+            fi
+        fi
+    done < <(qm list | grep -v VMID)
+
+    # Next number is highest + 1
+    NEXT_NUM=$((HIGHEST_NUM + 1))
+
+    # Format with leading zero if needed (docker-01, docker-02, etc.)
+    if [ "$NEXT_NUM" -lt 10 ]; then
+        VM_NAME="${VM_PREFIX}-0${NEXT_NUM}"
+    else
+        VM_NAME="${VM_PREFIX}-${NEXT_NUM}"
+    fi
+
+    log "Next available name: $VM_NAME"
 }
 
 get_new_vm_id() {
-    echo ""
-    read -p "Enter new VM ID (or press Enter for next available): " NEW_VM_ID
-
-    if [ -z "$NEW_VM_ID" ]; then
-        # Get next available VM ID
-        NEW_VM_ID=$(pvesh get /cluster/nextid)
-        log "Using next available VM ID: $NEW_VM_ID"
-    else
-        # Validate VM ID doesn't already exist
-        if qm status "$NEW_VM_ID" &>/dev/null; then
-            error "VM ID $NEW_VM_ID already exists"
-        fi
-    fi
-}
-
-get_vm_name() {
-    echo ""
-    while true; do
-        read -p "Enter VM Name: " VM_NAME
-
-        if [ -z "$VM_NAME" ]; then
-            warn "VM name cannot be empty. Please try again."
-        else
-            log "VM will be named: $VM_NAME"
-            break
-        fi
-    done
-}
-
-get_clone_mode() {
-    echo ""
-    while true; do
-        read -p "Clone Mode - (F)ull Clone or (L)inked Clone [F/L]: " -n 1 CLONE_MODE
-        echo ""
-
-        case ${CLONE_MODE^^} in
-            F)
-                CLONE_MODE="full"
-                CLONE_PARAM=""
-                log "Using Full Clone mode"
-                break
-                ;;
-            L)
-                CLONE_MODE="linked"
-                CLONE_PARAM="--full 0"
-                log "Using Linked Clone mode"
-                break
-                ;;
-            *)
-                warn "Invalid option. Please enter F for Full or L for Linked."
-                ;;
-        esac
-    done
+    # Get next available VM ID
+    NEW_VM_ID=$(pvesh get /cluster/nextid)
+    log "Using next available VM ID: $NEW_VM_ID"
 }
 
 ################################################################################
 # VM Creation
 ################################################################################
 
-create_vm() {
-    log "Creating VM $NEW_VM_ID from template $TEMPLATE_ID..."
+verify_template() {
+    log "Verifying template $TEMPLATE_ID exists..."
 
-    # Build the clone command
-    CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME --storage local-lvm $CLONE_PARAM"
+    if ! qm status "$TEMPLATE_ID" &>/dev/null; then
+        error "Template $TEMPLATE_ID not found"
+    fi
+
+    # Check if it's actually a template
+    if ! qm config "$TEMPLATE_ID" | grep -q "template: 1"; then
+        error "VM $TEMPLATE_ID exists but is not a template"
+    fi
+
+    log "Template $TEMPLATE_ID verified"
+}
+
+create_vm() {
+    log "Creating VM $NEW_VM_ID ($VM_NAME) from template $TEMPLATE_ID..."
+
+    # Build the clone command (full clone)
+    CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME --full 1"
 
     info "Executing: $CMD"
     echo ""
@@ -220,14 +213,14 @@ wait_for_ip() {
 show_vm_info() {
     echo ""
     echo "================================================================================"
-    echo -e "                    ${GREEN}VM Created Successfully!${NC}"
+    echo -e "                    ${GREEN}Docker Host VM Created Successfully!${NC}"
     echo "================================================================================"
     echo ""
     echo "VM Details:"
     echo "  VM ID:        $NEW_VM_ID"
     echo "  Name:         $VM_NAME"
-    echo "  Clone Type:   $CLONE_MODE"
-    echo "  Storage:      local-lvm"
+    echo "  Node:         $NODE_NAME"
+    echo "  Clone Type:   Full Clone"
     echo "  Template:     $TEMPLATE_ID"
     if [ "$VM_STARTED" = true ]; then
         echo "  Status:       Running"
@@ -240,25 +233,25 @@ show_vm_info() {
     echo ""
     echo "Next steps:"
     echo ""
-    echo "1. Configure Cloud-Init (if template supports it):"
-    echo -e "   ${YELLOW}Navigate to VM $NEW_VM_ID -> Cloud-Init tab in Proxmox GUI${NC}"
-    echo ""
-    echo "2. Adjust VM resources if needed:"
+    echo "1. Adjust VM resources if needed:"
     echo -e "   ${YELLOW}qm set $NEW_VM_ID --memory <MB> --cores <NUM>${NC}"
     echo ""
     if [ "$VM_STARTED" = true ]; then
-        echo "3. Open console:"
+        echo "2. Open console:"
         echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
         if [ -n "$VM_IP" ]; then
             echo ""
-            echo "4. Connect via SSH (if configured):"
+            echo "3. Connect via SSH (if configured):"
             echo -e "   ${YELLOW}ssh user@$VM_IP${NC}"
+            echo ""
+            echo "4. Verify Docker installation:"
+            echo -e "   ${YELLOW}docker --version${NC}"
         fi
     else
-        echo "3. Start the VM:"
+        echo "2. Start the VM:"
         echo -e "   ${YELLOW}qm start $NEW_VM_ID${NC}"
         echo ""
-        echo "4. Open console:"
+        echo "3. Open console:"
         echo -e "   ${YELLOW}Access via Proxmox GUI -> VM $NEW_VM_ID -> Console${NC}"
     fi
     echo ""
@@ -273,20 +266,23 @@ show_vm_info() {
 main() {
     clear
     echo "================================================================================"
-    echo "                    Proxmox VM Creation Script"
+    echo "                    Proxmox Docker Host Creation Script"
     echo "================================================================================"
     echo ""
-    echo "This script will create a new VM by cloning an existing template."
+    echo "This script will create a new Docker host VM from template $TEMPLATE_ID."
     echo ""
-    echo "Target Storage: local-lvm"
+    echo "Clone Type: Full Clone"
+    echo "Naming:     ${VM_PREFIX}-XX (auto-incremented)"
     echo ""
     echo "================================================================================"
 
+    # Verify template exists
+    verify_template
+
     # Gather input
-    get_template_id
+    get_node
+    get_next_docker_number
     get_new_vm_id
-    get_vm_name
-    get_clone_mode
 
     # Confirmation
     echo ""
@@ -297,8 +293,8 @@ main() {
     echo "  Template ID:      $TEMPLATE_ID"
     echo "  New VM ID:        $NEW_VM_ID"
     echo "  VM Name:          $VM_NAME"
-    echo "  Clone Mode:       $CLONE_MODE"
-    echo "  Storage:          local-lvm"
+    echo "  Target Node:      $NODE_NAME"
+    echo "  Clone Mode:       Full Clone"
     echo ""
     echo "================================================================================"
     echo ""
