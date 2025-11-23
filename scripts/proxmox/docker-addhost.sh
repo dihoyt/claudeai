@@ -3,7 +3,7 @@
 ################################################################################
 # Proxmox Docker Host Creation Script
 #
-# Creates a new Docker host VM by cloning template 104 with automatic naming
+# Creates a new Docker host VM by cloning template 201 with automatic naming
 # based on existing docker-* VMs.
 #
 # Usage: ./new-docker-host.sh
@@ -19,8 +19,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-TEMPLATE_ID=104
+TEMPLATE_ID=201
 VM_PREFIX="docker"
+VM_ID_START=500
 
 ################################################################################
 # Helper Functions
@@ -90,9 +91,27 @@ get_next_docker_number() {
 }
 
 get_new_vm_id() {
-    # Get next available VM ID
-    NEW_VM_ID=$(pvesh get /cluster/nextid)
-    log "Using next available VM ID: $NEW_VM_ID"
+    log "Finding next available VM ID starting from $VM_ID_START..."
+
+    # Start from VM_ID_START and find first available ID
+    CANDIDATE_ID=$VM_ID_START
+
+    while true; do
+        if ! qm status "$CANDIDATE_ID" &>/dev/null; then
+            # ID is available
+            NEW_VM_ID=$CANDIDATE_ID
+            log "Using VM ID: $NEW_VM_ID"
+            return 0
+        fi
+
+        # ID is taken, try next one
+        ((CANDIDATE_ID++))
+
+        # Safety check - don't go past 999
+        if [ "$CANDIDATE_ID" -gt 999 ]; then
+            error "No available VM IDs found in range $VM_ID_START-999"
+        fi
+    done
 }
 
 ################################################################################
