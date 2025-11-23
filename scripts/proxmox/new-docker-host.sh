@@ -48,34 +48,9 @@ info() {
 ################################################################################
 
 get_node() {
-    echo ""
-    echo -e "${BLUE}Available Nodes:${NC}"
-
-    # List all cluster nodes
-    pvesh get /nodes --output-format json | grep -oP '"node"\s*:\s*"\K[^"]+' 2>/dev/null || {
-        # Fallback if JSON parsing fails - get local node
-        CURRENT_NODE=$(hostname)
-        echo "  - $CURRENT_NODE (current)"
-    }
-
-    echo ""
-
-    while true; do
-        read -p "Enter target node name: " NODE_NAME
-
-        if [ -z "$NODE_NAME" ]; then
-            warn "Node name cannot be empty. Please try again."
-            continue
-        fi
-
-        # Verify node exists
-        if pvesh get /nodes/$NODE_NAME/status &>/dev/null; then
-            log "Target node: $NODE_NAME"
-            break
-        else
-            warn "Node '$NODE_NAME' not found. Please try again."
-        fi
-    done
+    # Use current node
+    NODE_NAME=$(hostname)
+    log "Using current node: $NODE_NAME"
 }
 
 get_next_docker_number() {
@@ -159,24 +134,15 @@ create_vm() {
 }
 
 start_vm() {
-    echo ""
-    read -p "Start the VM now? [Y/n]: " -n 1 START_VM
-    echo ""
+    log "Starting VM $NEW_VM_ID..."
+    if qm start "$NEW_VM_ID"; then
+        log "VM started successfully!"
+        VM_STARTED=true
 
-    if [[ ! $START_VM =~ ^[Nn]$ ]]; then
-        log "Starting VM $NEW_VM_ID..."
-        if qm start "$NEW_VM_ID"; then
-            log "VM started successfully!"
-            VM_STARTED=true
-
-            # Wait for VM to boot and get IP address
-            wait_for_ip
-        else
-            error "Failed to start VM"
-        fi
+        # Wait for VM to boot and get IP address
+        wait_for_ip
     else
-        log "VM start skipped"
-        VM_STARTED=false
+        error "Failed to start VM"
     fi
 }
 
@@ -264,53 +230,20 @@ show_vm_info() {
 ################################################################################
 
 main() {
-    clear
-    echo "================================================================================"
-    echo "                    Proxmox Docker Host Creation Script"
-    echo "================================================================================"
-    echo ""
-    echo "This script will create a new Docker host VM from template $TEMPLATE_ID."
-    echo ""
-    echo "Clone Type: Full Clone"
-    echo "Naming:     ${VM_PREFIX}-XX (auto-incremented)"
-    echo ""
-    echo "================================================================================"
+    log "Creating new Docker host VM from template $TEMPLATE_ID..."
 
     # Verify template exists
     verify_template
 
-    # Gather input
+    # Gather info
     get_node
     get_next_docker_number
     get_new_vm_id
 
-    # Confirmation
-    echo ""
-    echo "================================================================================"
-    echo "                    Confirm VM Creation"
-    echo "================================================================================"
-    echo ""
-    echo "  Template ID:      $TEMPLATE_ID"
-    echo "  New VM ID:        $NEW_VM_ID"
-    echo "  VM Name:          $VM_NAME"
-    echo "  Target Node:      $NODE_NAME"
-    echo "  Clone Mode:       Full Clone"
-    echo ""
-    echo "================================================================================"
-    echo ""
-
-    read -p "Proceed with VM creation? [Y/n]: " -n 1 CONFIRM
-    echo ""
-
-    if [[ ! $CONFIRM =~ ^[Yy]$ ]] && [[ -n $CONFIRM ]]; then
-        warn "VM creation cancelled by user"
-        exit 0
-    fi
-
     # Create the VM
     create_vm
 
-    # Start the VM (optional)
+    # Start the VM
     start_vm
 
     # Show results
