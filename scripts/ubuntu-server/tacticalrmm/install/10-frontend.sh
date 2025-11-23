@@ -7,6 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
+mkdir -p /rmm/web
+source /rmm/config.env
 main() {
     log "=== Starting TacticalRMM Frontend Installation ==="
 
