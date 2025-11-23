@@ -46,8 +46,26 @@ info() {
 get_template_id() {
     echo ""
     echo -e "${BLUE}Available Templates:${NC}"
-    # List all templates
-    qm list | grep -i template || warn "No templates found"
+
+    # List all VMs and identify templates
+    qm list | head -1
+    TEMPLATES_FOUND=0
+    qm list | grep -v VMID | while read line; do
+        vmid=$(echo "$line" | awk '{print $1}')
+        if qm config "$vmid" 2>/dev/null | grep -q "template: 1"; then
+            echo "$line [TEMPLATE]"
+            TEMPLATES_FOUND=1
+        fi
+    done
+
+    # Check if any templates were found
+    if ! qm list | grep -v VMID | while read line; do
+        vmid=$(echo "$line" | awk '{print $1}')
+        qm config "$vmid" 2>/dev/null | grep -q "template: 1" && exit 0
+    done; then
+        warn "No templates found"
+    fi
+
     echo ""
 
     while true; do
