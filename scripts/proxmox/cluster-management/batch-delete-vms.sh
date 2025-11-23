@@ -213,7 +213,7 @@ delete_vms() {
             log "  VM $VM_ID deleted successfully"
             ((SUCCESSFUL++))
         else
-            error "  Failed to delete VM $VM_ID"
+            warn "  Failed to delete VM $VM_ID"
             ((FAILED++))
         fi
     done
