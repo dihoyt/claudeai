@@ -210,8 +210,29 @@ create_vm_config() {
     MAC_ADDR=$(printf 'BC:24:11:%02X:%02X:%02X' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))
 
     # Generate random UUIDs
-    SMBIOS_UUID=$(uuidgen)
-    VMGENID=$(uuidgen)
+    # Try uuidgen first, fall back to manual generation if not available
+    if command -v uuidgen &> /dev/null; then
+        SMBIOS_UUID=$(uuidgen)
+        VMGENID=$(uuidgen)
+    else
+        # Generate UUID manually: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+        # where x is any hexadecimal digit and y is one of 8, 9, A, or B
+        generate_uuid() {
+            local N B T
+            for ((N=0; N < 16; ++N)); do
+                B=$((RANDOM%256))
+                case $N in
+                    6) printf '4%x' $((B%16)) ;;
+                    8) printf '%x' $((8 + RANDOM%4))$((B%16)) ;;
+                    3 | 5 | 7 | 9) printf '%02x-' $B ;;
+                    *) printf '%02x' $B ;;
+                esac
+            done
+            echo
+        }
+        SMBIOS_UUID=$(generate_uuid)
+        VMGENID=$(generate_uuid)
+    fi
 
     # Build network configuration
     if [ -n "$VLAN_TAG" ]; then
