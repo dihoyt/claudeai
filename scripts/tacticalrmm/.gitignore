@@ -1,0 +1,12 @@
+# Secrets and credentials - NEVER COMMIT
+.secrets.env
+installation-credentials.txt
+
+# Log files
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup.*
