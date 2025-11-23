@@ -6,65 +6,28 @@ This directory contains scripts for managing Proxmox VE (Virtual Environment) in
 
 | Script | Purpose | Interactive |
 |--------|---------|-------------|
-| `new-docker-host.sh` | Create Docker host from template 104 | No |
-| `create-vm.sh` | Create VM from any template | Yes |
-| `delete-vm.sh` | Delete VMs safely | Yes |
-| `task-manager.sh` | Monitor host and VMs | No |
-| `ssh-gh-dih-root.sh` | Configure SSH key-only access | No |
-| `authorize-git-keys.sh` | Import GitHub SSH keys | No |
-| `root-key-access.sh` | Disable SSH password auth | No |
-| `remove-node-from-cluster.sh` | Remove node from cluster | Yes |
-| `remove-cluster.sh` | Destroy cluster configuration | Yes |
+| **VM Management** | | |
+| `vm-create.sh` | Create VM from any template | Yes |
+| `vm-delete.sh` | Delete VMs safely | Yes |
+| `addhost-docker.sh` | Create Docker host (template 201) | No |
+| `addhost-ubuntusrv.sh` | Create Ubuntu server (template 200) | No |
+| `recover-vm-from-disk.sh` | Recover VM from existing disk | Yes |
+| **Template Management** | | |
+| `template-create.sh` | Convert VM to template | Yes |
+| `template-delete.sh` | Delete templates (with/without disks) | Yes |
+| **Cluster Management** | | |
+| `cluster-management/cluster-removenode.sh` | Remove node from cluster | Yes |
+| `cluster-management/fix-local-storage.sh` | Fix local storage after cluster removal | No |
+| `cluster-management/add-nfs-storage.sh` | Add NFS storage to node | Yes |
+| `cluster-management/task-manager.sh` | Monitor host and VMs | No |
+| **Helper Scripts** | | |
+| `jobs/ubuntu-vm-setup.sh` | Post-creation Ubuntu VM setup | No |
 
 ---
 
 ## VM Management Scripts
 
-### `new-docker-host.sh`
-**One-command Docker host creation from template 104**
-
-Automatically creates and starts a new Docker host VM with auto-incremented naming (`docker-01`, `docker-02`, etc.).
-
-**Features:**
-- No prompts - fully automated
-- Auto-detects current node
-- Auto-increments Docker host numbers
-- Full clone from template 104
-- Automatically starts VM
-- Waits for IP address and displays it
-
-**Usage:**
-```bash
-./new-docker-host.sh
-```
-
-**Output:**
-```
-[2025-01-22 14:30:00] Verifying template 104 exists
-[2025-01-22 14:30:00] Using current node: pve-main
-[2025-01-22 14:30:00] Scanning for existing docker-* VMs
-[2025-01-22 14:30:01] Next available name: docker-03
-[2025-01-22 14:30:01] Using next available VM ID: 105
-[2025-01-22 14:30:01] Creating VM 105 (docker-03) from template 104
-[2025-01-22 14:30:05] VM created successfully!
-[2025-01-22 14:30:05] Starting VM 105
-[2025-01-22 14:30:06] VM started successfully!
-[2025-01-22 14:30:06] Waiting for VM to boot and acquire IP address
-[2025-01-22 14:30:15] VM IP address acquired: 192.168.1.105
-
-VM Details:
-  VM ID:        105
-  Name:         docker-03
-  IP Address:   192.168.1.105
-```
-
-**Requirements:**
-- Template 104 must exist
-- Template 104 must have QEMU guest agent installed for IP detection
-
----
-
-### `create-vm.sh`
+### `vm-create.sh`
 **Interactive VM creation from any template**
 
 Full-featured script for creating VMs with customizable options.
@@ -74,12 +37,12 @@ Full-featured script for creating VMs with customizable options.
 - Prompts for template selection
 - Customizable VM name
 - Choice of full or linked clone
-- Optional VLAN configuration
-- Automatic VM startup
+- Automatic VM startup with IP detection
+- Automatically runs ubuntu-vm-setup.sh for post-creation configuration
 
 **Usage:**
 ```bash
-./create-vm.sh
+./vm-create.sh
 ```
 
 **Interactive Prompts:**
@@ -93,45 +56,505 @@ Full-featured script for creating VMs with customizable options.
 ```
 Available Templates:
 VMID  NAME            STATUS    MEM      BOOTDISK
-100   ubuntu-template template  2048     20G
-104   docker-template template  4096     80G
+200   ubuntu-template template  2048     20G
+201   docker-template template  4096     80G
 
-Enter Template ID: 100
-Enter new VM ID (or press Enter for next available): 201
+Enter Template ID: 200
+Enter new VM ID (or press Enter for next available): 301
 Enter VM Name: webserver-01
 Clone Mode - (F)ull Clone or (L)inked Clone [F/L]: F
 Start the VM now? [Y/n]: y
+
+[2025-01-23 14:30:15] VM IP address acquired: 192.168.1.50
+
+===============================================================================
+                    VM IP Address: 192.168.1.50
+===============================================================================
 ```
+
+**Post-Creation:**
+If the VM is started and gets an IP address, the script automatically calls `jobs/ubuntu-vm-setup.sh` to:
+- Wait for SSH to be ready
+- Wait for cloud-init to complete
+- Reboot the VM
+- SSH into the VM as ubadmin
 
 ---
 
-### `delete-vm.sh`
-**Safe VM deletion with multiple confirmations**
+### `addhost-docker.sh`
+**One-command Docker host creation from template 201**
+
+Fully automated script that creates and configures a new Docker host VM with auto-incremented naming (`docker-01`, `docker-02`, etc.).
+
+**Features:**
+- No prompts - fully automated
+- Uses template 201
+- Auto-increments Docker host numbers (docker-01, docker-02, etc.)
+- VM IDs start at 500
+- Full clone for production use
+- Automatically starts VM
+- Waits for IP address
+- Displays highlighted IP address
+- Automatically runs ubuntu-vm-setup.sh for complete configuration
+
+**Usage:**
+```bash
+./addhost-docker.sh
+```
+
+**Progress Display:**
+```
+[1/5] ✓ Cloning template 201 to create docker-01 (VM ID: 500)
+[2/5] ✓ Starting VM 500
+[3/5] ✓ Waiting for VM to boot
+[4/5] ✓ VM IP address acquired: 192.168.1.105
+[5/5] ✓ VM docker-01 is ready
+
+===============================================================================
+                    VM IP Address: 192.168.1.105
+===============================================================================
+
+[2025-01-23 14:30:00] Starting automated VM setup...
+```
+
+**Requirements:**
+- Template 201 must exist
+- Template 201 must have QEMU guest agent installed
+
+---
+
+### `addhost-ubuntusrv.sh`
+**One-command Ubuntu server creation from template 200**
+
+Fully automated script identical to addhost-docker.sh but for Ubuntu servers.
+
+**Features:**
+- No prompts - fully automated
+- Uses template 200
+- Auto-increments server numbers (ubuntusrv-01, ubuntusrv-02, etc.)
+- VM IDs start at 400
+- Full clone for production use
+- Automatically starts VM and runs ubuntu-vm-setup.sh
+
+**Usage:**
+```bash
+./addhost-ubuntusrv.sh
+```
+
+**Requirements:**
+- Template 200 must exist
+
+---
+
+### `vm-delete.sh`
+**Safe VM deletion with streamlined confirmation**
 
 Interactive script with safety features to prevent accidental deletions.
 
 **Features:**
 - Excludes templates from deletion list
 - Shows VM details before deletion
-- Requires typing exact VM name
-- Handles running VMs (graceful/force shutdown)
-- Multiple confirmation prompts
+- Auto-stops running VMs (graceful 30s timeout, then force stop)
+- Single confirmation by typing VM ID
 - Purges all disks automatically
 
 **Usage:**
 ```bash
-./delete-vm.sh
+./vm-delete.sh
+```
+
+**Workflow:**
+1. Lists all non-template VMs
+2. Prompts for VM ID to delete
+3. Displays VM information
+4. Auto-stops VM if running
+5. Requires typing VM ID to confirm deletion
+6. Deletes VM with all disks
+
+**Example:**
+```
+Available VMs:
+VMID  NAME           STATUS    MEM      BOOTDISK
+301   webserver-01   running   2048     20G
+500   docker-01      stopped   4096     80G
+
+Enter VM ID to delete (or 'q' to quit): 301
+
+===============================================================================
+                    VM Information
+===============================================================================
+
+  VM ID:        301
+  Name:         webserver-01
+  Status:       running
+  Memory:       2048MB
+  CPU Cores:    2
+  Disks:        1
+
+===============================================================================
+
+WARNING: VM 301 is currently running. It will be stopped before deletion.
+
+[2025-01-23 14:30:00] Stopping VM 301...
+[2025-01-23 14:30:15] VM stopped successfully
+
+WARNING: You are about to delete this VM permanently!
+
+You've selected 'webserver-01' - type the VM ID '301' to confirm deletion: 301
 ```
 
 **Safety Features:**
-- Name confirmation required
-- Running VMs must be stopped first
-- Final "yes" confirmation
-- Templates cannot be deleted
+- Templates cannot be deleted (use template-delete.sh)
+- Shows complete VM information before deletion
+- Requires typing exact VM ID to proceed
+- Automatic graceful shutdown with force stop fallback
 
 ---
 
-### `task-manager.sh`
+### `recover-vm-from-disk.sh`
+**Recover or create VM from existing LVM disk**
+
+Creates a new VM configuration using an existing disk that may have been orphaned or needs to be recovered.
+
+**Features:**
+- Lists available LVM volumes
+- Creates new VM with existing disk
+- Configures basic VM settings (memory, CPU, network)
+- Generates proper UUIDs (works without uuidgen command)
+
+**Usage:**
+```bash
+./recover-vm-from-disk.sh
+```
+
+**Use Cases:**
+- Recovering VMs after accidental configuration deletion
+- Migrating disks between VMs
+- Importing disks from other systems
+
+## Template Management Scripts
+
+### `template-create.sh`
+**Convert existing VM to template**
+
+Interactive script to safely convert a VM into a reusable template.
+
+**Features:**
+- Lists all non-template VMs
+- Shows VM information before conversion
+- Auto-stops running VMs (graceful shutdown with fallback)
+- Provides preparation recommendations
+- Converts VM to template
+
+**Usage:**
+```bash
+./template-create.sh
+```
+
+**Workflow:**
+1. Lists all VMs (excluding existing templates)
+2. Prompts for VM ID to convert
+3. Displays VM information
+4. Stops VM if running (graceful/force stop)
+5. Confirms conversion
+6. Converts to template
+
+**Example:**
+```
+Available VMs:
+VMID  NAME            STATUS    MEM      BOOTDISK
+301   ubuntu-clean    stopped   2048     20G
+
+Enter VM ID to convert to template: 301
+
+===============================================================================
+                    VM Information
+===============================================================================
+
+  VM ID:        301
+  Name:         ubuntu-clean
+  Status:       stopped
+  Memory:       2048MB
+  CPU Cores:    2
+
+===============================================================================
+
+IMPORTANT: Before converting to template, ensure:
+  • System is fully updated (apt update && apt upgrade)
+  • SSH host keys removed (rm /etc/ssh/ssh_host_*)
+  • Machine ID cleared (truncate -s 0 /etc/machine-id)
+  • Network configs use DHCP or cloud-init
+  • User accounts cleaned up
+  • History cleared (history -c)
+  • QEMU Guest Agent installed
+
+Proceed with template conversion? [Y/n]: y
+```
+
+**Best Practices:**
+- Always prepare VMs before converting (generalize configuration)
+- Install QEMU Guest Agent for IP detection
+- Use cloud-init for automated configuration
+- Document template version and purpose
+
+---
+
+### `template-delete.sh`
+**Delete templates with optional disk preservation**
+
+Interactive script to safely delete templates with choice to keep or remove disks.
+
+**Features:**
+- Lists only templates (excludes regular VMs)
+- Shows template information and disk details
+- Option to delete disks or preserve them
+- Clear explanation of both deletion modes
+- Requires typing template name to confirm
+
+**Usage:**
+```bash
+./template-delete.sh
+```
+
+**Workflow:**
+1. Lists all templates
+2. Prompts for template ID
+3. Displays template and disk information
+4. Asks whether to delete or preserve disks
+5. Requires typing template name to confirm
+6. Deletes template
+
+**Example:**
+```
+Available Templates:
+VMID  NAME            STATUS    MEM      BOOTDISK
+200   ubuntu-template template  2048     20G
+201   docker-template template  4096     80G
+
+Enter Template ID to delete: 200
+
+===============================================================================
+                    Template Information
+===============================================================================
+
+  Template ID:  200
+  Name:         ubuntu-template
+  Memory:       2048MB
+  CPU Cores:    2
+  Disks:        1
+
+===============================================================================
+
+Getting disk information for template 200...
+
+scsi0: local-lvm:vm-200-disk-0,size=20G
+
+===============================================================================
+Disk Deletion Options:
+===============================================================================
+
+  1. Delete configuration AND disks (--purge)
+     • Removes the template completely
+     • Deletes all associated disk images
+     • Frees up storage space
+
+  2. Delete configuration ONLY (keep disks)
+     • Removes the template configuration
+     • Preserves disk images for potential recovery
+     • Disks become orphaned and must be managed manually
+
+===============================================================================
+
+Do you want to delete the disks as well? [y/N]: y
+
+WARNING: You are about to delete this template permanently!
+
+Type the template name 'ubuntu-template' to confirm deletion: ubuntu-template
+```
+
+**Disk Preservation:**
+When choosing to keep disks, the script provides commands to:
+- View orphaned disks: `lvs | grep -E "vm-200-"`
+- Remove orphaned disks later: `lvremove /dev/pve/vm-200-disk-X`
+
+---
+
+## Helper Scripts
+
+### `jobs/ubuntu-vm-setup.sh`
+**Post-creation Ubuntu VM setup automation**
+
+Automated helper script called by vm-create.sh, addhost-docker.sh, and addhost-ubuntusrv.sh to complete VM setup.
+
+**Features:**
+- Waits for SSH to become available
+- Waits for cloud-init to complete
+- Reboots the VM
+- Waits for VM to come back online
+- Automatically SSHs into the VM as ubadmin
+
+**Usage:**
+```bash
+# Called automatically by VM creation scripts
+# Can also be run manually
+./jobs/ubuntu-vm-setup.sh <VM_IP_ADDRESS>
+```
+
+**Example:**
+```bash
+./jobs/ubuntu-vm-setup.sh 192.168.1.50
+```
+
+**Progress Display:**
+```
+[2025-01-23 14:30:00] Starting Ubuntu VM setup for 192.168.1.50
+[2025-01-23 14:30:05] ✓ SSH is ready
+[2025-01-23 14:30:10] ✓ Cloud-init completed
+[2025-01-23 14:30:15] Rebooting VM...
+[2025-01-23 14:30:45] ✓ VM is back online
+[2025-01-23 14:30:46] Connecting to VM via SSH...
+
+Welcome to Ubuntu 24.04 LTS
+ubadmin@webserver-01:~$
+```
+
+**Requirements:**
+- VM must have SSH enabled
+- VM must have cloud-init installed
+- VM must have ubadmin user configured
+
+---
+
+## Cluster Management Scripts
+
+### `cluster-management/cluster-removenode.sh`
+**Remove a node from Proxmox cluster**
+
+Interactive script to remove nodes from a cluster while keeping the cluster active.
+
+**Features:**
+- Displays all cluster nodes
+- Select which node to remove (excluding current)
+- Confirms selection before proceeding
+- Shows updated cluster status after removal
+- Cluster remains functional with remaining nodes
+
+**Usage:**
+```bash
+# Run on the node you want to KEEP
+./cluster-management/cluster-removenode.sh
+```
+
+**Example:**
+```
+Running on node: pve-main
+
+Current Cluster Nodes:
+Node     ID   Addr           Status
+pve-main 1    192.168.1.100  online
+pve-mini 2    192.168.1.101  online
+
+Available nodes to remove (excluding current node pve-main):
+ 1. pve-mini
+
+Enter the number of the node to remove: 1
+Selected node to remove: pve-mini
+
+Are you sure you want to remove pve-mini from the cluster? [y/N]: y
+
+[2025-01-23 14:30:00] Removing node pve-mini from cluster
+[2025-01-23 14:30:05] Node pve-mini removed from cluster successfully
+```
+
+**When to use:**
+- Decommissioning a node
+- Downsizing cluster
+- Replacing a failed node
+
+**After Removal:**
+If the removed node was part of a cluster, you may need to run `fix-local-storage.sh` on the removed node to restore local storage access.
+
+---
+
+### `cluster-management/fix-local-storage.sh`
+**Fix local storage after cluster removal**
+
+Restores local storage functionality on a node that was removed from a cluster.
+
+**Features:**
+- Automatically detects node name
+- Updates storage configuration
+- Removes cluster-specific storage settings
+- Restarts necessary services
+
+**Usage:**
+```bash
+# Run on the node that was removed from cluster
+./cluster-management/fix-local-storage.sh
+```
+
+**When to use:**
+- After removing a node from a cluster
+- When local storage is inaccessible after cluster disbanding
+- When storage shows as unavailable in standalone mode
+
+**Example:**
+```
+[2025-01-23 14:30:00] Fixing local storage configuration for node: pve-mini
+[2025-01-23 14:30:01] Updating storage.cfg
+[2025-01-23 14:30:02] Restarting PVE services
+[2025-01-23 14:30:05] Local storage restored successfully
+```
+
+---
+
+### `cluster-management/add-nfs-storage.sh`
+**Add NFS storage to Proxmox node**
+
+Interactive script to configure NFS storage on a Proxmox node.
+
+**Features:**
+- Prompts for NFS server details
+- Validates NFS mount accessibility
+- Configures storage in Proxmox
+- Sets appropriate content types
+
+**Usage:**
+```bash
+./cluster-management/add-nfs-storage.sh
+```
+
+**Interactive Prompts:**
+1. **Storage ID**: Name for the storage in Proxmox
+2. **NFS Server**: IP address or hostname of NFS server
+3. **NFS Export Path**: Path to the NFS share
+4. **Content Types**: What to store (images, backups, ISO, etc.)
+
+**Example:**
+```
+Enter Storage ID: nfs-backup
+Enter NFS Server IP/Hostname: 192.168.1.200
+Enter NFS Export Path: /mnt/storage/proxmox
+Select content types:
+  [x] Images
+  [x] Backups
+  [ ] ISO
+  [x] Container templates
+
+[2025-01-23 14:30:00] Testing NFS connection...
+[2025-01-23 14:30:02] NFS mount successful
+[2025-01-23 14:30:03] Adding storage to Proxmox configuration
+[2025-01-23 14:30:05] NFS storage 'nfs-backup' added successfully
+```
+
+**Requirements:**
+- NFS server must be accessible
+- NFS export must be configured with appropriate permissions
+- Node must have network access to NFS server
+
+---
+
+### `cluster-management/task-manager.sh`
 **Real-time Proxmox monitoring dashboard**
 
 Displays comprehensive host statistics and VM information.
@@ -146,13 +569,13 @@ Displays comprehensive host statistics and VM information.
 **Usage:**
 ```bash
 # Single display
-./task-manager.sh
+./cluster-management/task-manager.sh
 
 # Watch mode (refresh every 5 seconds)
-./task-manager.sh --watch
+./cluster-management/task-manager.sh --watch
 
 # Custom refresh interval
-./task-manager.sh --watch 10
+./cluster-management/task-manager.sh --watch 10
 ```
 
 **Example Output:**
@@ -179,221 +602,107 @@ Summary: Running: 2  Stopped: 1  Total: 3
 
 ---
 
-## SSH Configuration Scripts
-
-### `ssh-gh-dih-root.sh`
-**One-command SSH security configuration**
-
-Fetches SSH keys from GitHub user `dihoyt` and configures SSH for key-only root access.
-
-**What it does:**
-1. Imports SSH keys from `github.com/dihoyt.keys`
-2. Adds keys to `/root/.ssh/authorized_keys`
-3. Configures SSH to disable password authentication
-4. Enables root login with keys only
-5. Restarts SSH service
-
-**Usage:**
-```bash
-./ssh-gh-dih-root.sh
-```
-
-**Requirements:**
-- Must run as root
-- Internet access to github.com
-- SSH service installed
-
-**Security:**
-- Disables password authentication completely
-- Only SSH keys from GitHub user `dihoyt` allowed
-- Backs up existing configurations
-
----
-
-### `authorize-git-keys.sh`
-**Import SSH keys from GitHub**
-
-Standalone script to import SSH keys from GitHub user `dihoyt`.
-
-**Usage:**
-```bash
-# As root (configures /root/.ssh)
-sudo ./authorize-git-keys.sh
-
-# As regular user (configures $HOME/.ssh)
-./authorize-git-keys.sh
-```
-
-**Features:**
-- Fetches keys from `github.com/dihoyt.keys`
-- Works for root or regular users
-- Backs up existing authorized_keys
-- Shows key fingerprints after import
-
----
-
-### `root-key-access.sh`
-**Configure SSH for key-only authentication**
-
-Assumes `authorize-git-keys.sh` has already been run. Configures SSH daemon to disable password authentication.
-
-**Usage:**
-```bash
-./root-key-access.sh
-```
-
-**Requirements:**
-- Must run as root
-- Requires existing `/root/.ssh/authorized_keys`
-- Run `authorize-git-keys.sh` first if needed
-
-**What it configures:**
-- `PermitRootLogin prohibit-password`
-- `PasswordAuthentication no`
-- `PubkeyAuthentication yes`
-- `ChallengeResponseAuthentication no`
-
----
-
-## Cluster Management Scripts
-
-### `remove-node-from-cluster.sh`
-**Remove a node from Proxmox cluster**
-
-Interactive script to remove nodes from a cluster while keeping the cluster active.
-
-**Features:**
-- Displays all cluster nodes
-- Select which node to remove (excluding current)
-- Confirms selection before proceeding
-- Shows updated cluster status after removal
-- Cluster remains functional with remaining nodes
-
-**Usage:**
-```bash
-# Run on the node you want to KEEP
-./remove-node-from-cluster.sh
-```
-
-**Example:**
-```
-Running on node: pve-main
-
-Current Cluster Nodes:
-Node     ID   Addr           Status
-pve-main 1    192.168.1.100  online
-pve-mini 2    192.168.1.101  online
-
-Available nodes to remove (excluding current node pve-main):
- 1. pve-mini
-
-Enter the number of the node to remove: 1
-Selected node to remove: pve-mini
-
-Are you sure you want to remove pve-mini from the cluster? [y/N]: y
-
-[2025-01-22 14:30:00] Removing node pve-mini from cluster
-[2025-01-22 14:30:05] Node pve-mini removed from cluster successfully
-```
-
-**When to use:**
-- Decommissioning a node
-- Downsizing cluster
-- Replacing a failed node
-
----
-
-### `remove-cluster.sh`
-**Destroy cluster configuration and return to standalone**
-
-Removes all cluster configuration from the current node, returning it to standalone mode.
-
-**WARNING:** Only use this when:
-- You are the last node in the cluster, OR
-- You want to completely destroy cluster configuration on this node
-
-**Features:**
-- Shows warning about cluster destruction
-- Lists current cluster nodes before proceeding
-- Requires explicit confirmation
-- Removes all cluster files and databases
-- Restarts services in standalone mode
-- Verifies standalone operation
-
-**Usage:**
-```bash
-./remove-cluster.sh
-```
-
-**Example:**
-```
-[2025-01-22 14:30:00] Running on node: pve-main
-
-════════════════════════════════════════════════════════════
-                         WARNING
-════════════════════════════════════════════════════════════
-
-This will completely remove cluster configuration from this node.
-If other nodes are still in the cluster, remove them first using:
-  ./remove-node-from-cluster.sh
-
-Current cluster nodes:
-Node     ID   Addr           Status
-pve-main 1    192.168.1.100  online
-
-════════════════════════════════════════════════════════════
-
-Are you sure you want to remove cluster configuration? [y/N]: y
-
-[2025-01-22 14:30:05] Removing cluster configuration from pve-main
-[2025-01-22 14:30:10] Cluster configuration removed
-[2025-01-22 14:30:15] System is now running in standalone mode
-```
-
-**Recommended workflow:**
-1. Remove all other nodes with `remove-node-from-cluster.sh`
-2. Verify you're the last node
-3. Run `remove-cluster.sh` on the last node
-
----
-
 ## Common Workflows
 
 ### Quick Docker Host Deployment
 ```bash
 # Create and start a new Docker host in one command
-./new-docker-host.sh
+./addhost-docker.sh
 
-# SSH into new host once IP is displayed
-ssh user@192.168.1.105
+# The script will automatically:
+# - Clone template 201
+# - Start the VM
+# - Get IP address
+# - Run ubuntu-vm-setup.sh
+# - SSH into the new host
+
+# VM will be named docker-01, docker-02, etc.
+# VM IDs start at 500
 ```
 
-### Secure SSH Setup on New Proxmox Node
+### Quick Ubuntu Server Deployment
 ```bash
-# One command to configure SSH keys and disable passwords
-sudo ./ssh-gh-dih-root.sh
+# Create and start a new Ubuntu server in one command
+./addhost-ubuntusrv.sh
 
-# Test SSH access from another terminal before closing current session
-ssh root@proxmox-host
+# VM will be named ubuntusrv-01, ubuntusrv-02, etc.
+# VM IDs start at 400
 ```
 
-### Cluster Teardown
+### Custom VM Creation
+```bash
+# Interactive VM creation with custom settings
+./vm-create.sh
+
+# Follow prompts to:
+# - Select template
+# - Set VM name
+# - Choose full or linked clone
+# - Start VM automatically
+```
+
+### Template Creation Workflow
+```bash
+# Step 1: Create and configure a clean VM
+./vm-create.sh
+# Name it something like "ubuntu-clean" or "docker-base"
+
+# Step 2: SSH into the VM and prepare it for templating
+ssh ubadmin@<VM_IP>
+sudo apt update && sudo apt upgrade -y
+sudo apt install qemu-guest-agent -y
+sudo rm /etc/ssh/ssh_host_*
+sudo truncate -s 0 /etc/machine-id
+history -c
+logout
+
+# Step 3: Convert to template
+./template-create.sh
+# Select the VM ID and confirm
+```
+
+### Safe VM Deletion
+```bash
+# Delete a VM with automatic shutdown
+./vm-delete.sh
+
+# Script will:
+# - List all VMs
+# - Show VM details
+# - Auto-stop if running
+# - Require VM ID confirmation
+# - Delete with all disks
+```
+
+### Cluster Node Removal
 ```bash
 # Step 1: Remove secondary node (run on primary)
-./remove-node-from-cluster.sh
-# Select secondary node
+./cluster-management/cluster-removenode.sh
+# Select secondary node to remove
 
-# Step 2: Destroy cluster (run on last remaining node)
-./remove-cluster.sh
+# Step 2: Fix local storage on removed node
+# (SSH into the removed node)
+./cluster-management/fix-local-storage.sh
 ```
 
 ### Monitor System During Deployment
 ```bash
 # Start monitoring in watch mode
-./task-manager.sh --watch
+./cluster-management/task-manager.sh --watch
 
 # In another terminal, deploy VMs
-./new-docker-host.sh
+./addhost-docker.sh
+```
+
+### Recover VM from Orphaned Disk
+```bash
+# If you have an orphaned disk (e.g., from template deletion)
+./recover-vm-from-disk.sh
+
+# Script will:
+# - List available LVM volumes
+# - Create new VM with existing disk
+# - Configure basic settings
 ```
 
 ---
@@ -482,33 +791,49 @@ qm set 101 --net0 virtio,bridge=vmbr0,tag=100
 - Use consistent numbering schemes
 
 ### VM ID Organization
-- **100-199**: Templates
-- **200-299**: Production VMs
-- **300-399**: Development VMs
-- **400-499**: Test VMs
+- **100-199**: Reserved (system/future use)
+- **200-299**: Templates
+  - 200: Ubuntu Server template
+  - 201: Docker Host template
+- **300-399**: Custom/Manual VMs
+- **400-499**: Ubuntu Servers (ubuntusrv-XX)
+  - Created by addhost-ubuntusrv.sh
+  - Auto-increments from 400
+- **500-599**: Docker Hosts (docker-XX)
+  - Created by addhost-docker.sh
+  - Auto-increments from 500
 
 ### Template Management
 - Keep templates updated monthly
 - Test templates before production use
-- Version template names: `ubuntu-2404-v1`, `ubuntu-2404-v2`
-- Always include QEMU guest agent in templates
+- Always include QEMU guest agent in templates (for IP detection)
+- Prepare VMs properly before converting to templates:
+  - Update all packages
+  - Remove SSH host keys
+  - Clear machine ID
+  - Clear command history
+  - Install cloud-init for automation
+- Use template-create.sh to convert VMs to templates
+- Use template-delete.sh to safely remove templates
+- When deleting templates, choose whether to keep or purge disks
 
 ### Clone Mode Selection
-- **Production**: Always use full clones
-- **Development/Testing**: Linked clones acceptable
-- **Never delete templates** if linked clones exist
+- **Production**: Always use full clones (addhost-*.sh scripts)
+- **Development/Testing**: Linked clones acceptable (vm-create.sh)
+- **Never delete templates** if linked clones exist (data will be lost)
 
-### Security
-- Always use SSH keys, never passwords
-- Disable password authentication after key setup
-- Test SSH access before closing existing session
-- Keep a backup method to access the system
+### Automated VM Creation
+- Use addhost-docker.sh for Docker hosts (template 201, VM IDs 500+)
+- Use addhost-ubuntusrv.sh for Ubuntu servers (template 200, VM IDs 400+)
+- Use vm-create.sh for custom/manual VMs (any template)
+- All scripts automatically run ubuntu-vm-setup.sh for post-creation configuration
 
 ### Cluster Management
 - Document cluster topology
-- Remove failed nodes promptly
-- Test cluster operations in dev first
+- Remove failed nodes promptly using cluster-removenode.sh
+- Run fix-local-storage.sh on removed nodes to restore local storage
 - Keep cluster nodes synchronized (time, versions)
+- Use task-manager.sh to monitor cluster health
 
 ---
 
@@ -523,30 +848,77 @@ chmod +x scriptname.sh
 - Ensure running on Proxmox host
 - SSH into Proxmox server first
 
-### Template 104 not found
+### Template 200 or 201 not found
 ```bash
 # List all templates
-qm list | grep template
+qm list | grep -v VMID | while read line; do
+  vmid=$(echo "$line" | awk '{print $1}')
+  qm config "$vmid" 2>/dev/null | grep -q "template: 1" && echo "$line [TEMPLATE]"
+done
 
-# Create template 104 or modify script
+# Create templates using template-create.sh
+./template-create.sh
 ```
 
-### Can't SSH after running ssh scripts
-- Keep original session open
-- Check `/etc/ssh/sshd_config` for errors
-- Restore from backup: `cp /etc/ssh/sshd_config.backup.* /etc/ssh/sshd_config`
-- Restart SSH: `systemctl restart sshd`
-
-### Cluster removal fails
+### VM creation fails with "uuidgen: command not found"
+The scripts now have built-in UUID generation fallback. If you see this error on an older script:
 ```bash
-# Check cluster status
-pvecm status
+# Use recover-vm-from-disk.sh which has the fallback implemented
+./recover-vm-from-disk.sh
+```
 
-# Manually stop services
-systemctl stop pve-cluster corosync
+### VM doesn't get IP address
+```bash
+# Ensure QEMU Guest Agent is installed in the template
+# SSH into the template before converting:
+sudo apt install qemu-guest-agent -y
+sudo systemctl enable qemu-guest-agent
+sudo systemctl start qemu-guest-agent
 
-# Check for stuck processes
-ps aux | grep pmxcfs
+# Then convert to template
+./template-create.sh
+```
+
+### ubuntu-vm-setup.sh not found
+```bash
+# Ensure the script is in the jobs/ subdirectory
+ls -la jobs/ubuntu-vm-setup.sh
+
+# The VM creation scripts look for it at:
+# ./jobs/ubuntu-vm-setup.sh (relative to script location)
+```
+
+### Local storage unavailable after cluster removal
+```bash
+# Run the fix-local-storage script
+./cluster-management/fix-local-storage.sh
+
+# This updates storage.cfg and restarts services
+```
+
+### Template deletion leaves orphaned disks
+This is expected behavior when choosing "keep disks" option. To clean up:
+```bash
+# View orphaned disks
+lvs | grep -E "vm-<TEMPLATE_ID>-"
+
+# Remove specific disk
+lvremove /dev/pve/vm-<TEMPLATE_ID>-disk-0
+
+# Or recover the disk
+./recover-vm-from-disk.sh
+```
+
+### VM stuck in "stopped" after creation
+```bash
+# Check VM status
+qm status <VMID>
+
+# Try manual start
+qm start <VMID>
+
+# Check logs
+journalctl -u qemu-server@<VMID> -f
 ```
 
 ---

@@ -225,36 +225,46 @@ main() {
     get_vm_info
     display_vm_info
 
-    # Confirm deletion
+    # Stop VM if running (auto-stop without asking)
+    if [[ "$VM_STATUS" == "running" ]]; then
+        warn "VM $VM_ID is currently running. It will be stopped before deletion."
+        echo ""
+        log "Stopping VM $VM_ID..."
+
+        # Try graceful shutdown first
+        if qm shutdown "$VM_ID" >/dev/null 2>&1; then
+            info "Waiting for VM to stop gracefully (max 30 seconds)..."
+            WAIT_COUNT=0
+            while [ $WAIT_COUNT -lt 30 ]; do
+                sleep 2
+                CURRENT_STATUS=$(qm status "$VM_ID" | awk '{print $2}')
+                if [[ "$CURRENT_STATUS" == "stopped" ]]; then
+                    log "VM stopped successfully"
+                    VM_STATUS="stopped"
+                    break
+                fi
+                WAIT_COUNT=$((WAIT_COUNT + 2))
+            done
+        fi
+
+        # Force stop if still running
+        if [[ "$VM_STATUS" == "running" ]]; then
+            warn "Graceful shutdown timed out. Force stopping..."
+            qm stop "$VM_ID" >/dev/null 2>&1
+            log "VM force stopped"
+            VM_STATUS="stopped"
+        fi
+        echo ""
+    fi
+
+    # Single confirmation - type VM ID
     echo -e "${RED}WARNING: You are about to delete this VM permanently!${NC}"
     echo ""
-    read -p "Type the VM name '$VM_NAME' to confirm deletion: " CONFIRM_NAME
+    read -p "You've selected '$VM_NAME' - type the VM ID '$VM_ID' to confirm deletion: " CONFIRM_ID
     echo ""
 
-    if [[ "$CONFIRM_NAME" != "$VM_NAME" ]]; then
-        warn "VM name does not match. Deletion cancelled."
-        exit 0
-    fi
-
-    read -p "Are you absolutely sure you want to delete VM $VM_ID? [yes/NO]: " CONFIRM
-    echo ""
-
-    if [[ "$CONFIRM" != "yes" ]]; then
-        warn "Deletion cancelled by user"
-        exit 0
-    fi
-
-    # Stop VM if running
-    stop_vm_if_running
-
-    # Final confirmation
-    echo ""
-    echo -e "${RED}FINAL WARNING: Last chance to cancel!${NC}"
-    read -p "Proceed with deletion of VM $VM_ID ($VM_NAME)? [yes/NO]: " FINAL_CONFIRM
-    echo ""
-
-    if [[ "$FINAL_CONFIRM" != "yes" ]]; then
-        warn "Deletion cancelled by user"
+    if [[ "$CONFIRM_ID" != "$VM_ID" ]]; then
+        warn "VM ID does not match. Deletion cancelled."
         exit 0
     fi
 
