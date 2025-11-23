@@ -218,17 +218,12 @@ create_vm_config() {
         # Generate UUID manually: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
         # where x is any hexadecimal digit and y is one of 8, 9, A, or B
         generate_uuid() {
-            local N B T
-            for ((N=0; N < 16; ++N)); do
-                B=$((RANDOM%256))
-                case $N in
-                    6) printf '4%x' $((B%16)) ;;
-                    8) printf '%x' $((8 + RANDOM%4))$((B%16)) ;;
-                    3 | 5 | 7 | 9) printf '%02x-' $B ;;
-                    *) printf '%02x' $B ;;
-                esac
-            done
-            echo
+            printf '%08x-%04x-4%03x-%04x-%012x' \
+                $((RANDOM<<16 | RANDOM)) \
+                $((RANDOM)) \
+                $((RANDOM & 0xfff)) \
+                $(((RANDOM & 0x3fff) | 0x8000)) \
+                $(((RANDOM<<32) | (RANDOM<<16) | RANDOM))
         }
         SMBIOS_UUID=$(generate_uuid)
         VMGENID=$(generate_uuid)
