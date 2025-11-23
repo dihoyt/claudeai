@@ -69,13 +69,23 @@ display_and_select_node() {
     echo -e "${BLUE}Current Cluster Nodes:${NC}"
     echo ""
 
-    # Get list of nodes
+    # Get list of nodes (skip header lines)
     pvecm nodes | tail -n +3
 
     echo ""
 
     # Get available nodes (excluding current node)
-    AVAILABLE_NODES=$(pvecm nodes | tail -n +3 | awk '{print $3}' | grep -v "^$CURRENT_NODE$")
+    # Extract the Name column (last column) and filter out current node and "(local)" marker
+    AVAILABLE_NODES=$(pvecm nodes | tail -n +3 | awk '{
+        # Get the last field (Name column)
+        name = $NF
+        # If it ends with "(local)", remove that marker
+        if (name ~ /\(local\)$/) {
+            sub(/[[:space:]]*\(local\)$/, "", $(NF-1))
+            name = $(NF-1)
+        }
+        print name
+    }' | grep -v "^$CURRENT_NODE$")
 
     if [ -z "$AVAILABLE_NODES" ]; then
         error "No other nodes found in cluster. Only the current node exists."
