@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "cert": "${MESH_DOMAIN}",
+    "mongoDb": null,
+    "WANonly": true,
+    "minify": true,
+    "port": 443,
+    "aliasPort": 443,
+    "redirPort": 800,
+    "allowLoginToken": true,
+    "allowFraming": true,
+    "tlsOffload": "127.0.0.1",
+    "trustedProxy": "127.0.0.1"
+  },
+  "domains": {
+    "": {
+      "title": "TacticalRMM MeshCentral",
+      "title2": "MeshCentral",
+      "newAccounts": false,
+      "guestDeviceSharing": false,
+      "userNameIsEmail": false
+    }
+  }
+}

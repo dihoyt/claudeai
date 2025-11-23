@@ -1,0 +1,20 @@
+# Environment files
+.env
+.env.backup
+
+# SSL certificates
+ssl/*.crt
+ssl/*.key
+ssl/*.pem
+
+# Backups
+backups/
+
+# Logs
+*.log
+
+# Docker
+.docker/
+
+# Credentials
+installation-credentials.txt
