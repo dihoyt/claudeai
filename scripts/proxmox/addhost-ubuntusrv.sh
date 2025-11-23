@@ -170,19 +170,66 @@ verify_template() {
 
 create_vm() {
     show_progress 2 "running" "Cloning VM $NEW_VM_ID ($VM_NAME)"
+    echo ""
 
     # Build the clone command (full clone)
     CMD="qm clone $TEMPLATE_ID $NEW_VM_ID --name $VM_NAME --full 1"
 
-    # Execute the clone command with progress monitoring
-    if eval "$CMD" >/dev/null 2>&1; then
-        show_progress 2 "done" "VM cloned successfully"
-        return 0
-    else
-        show_progress 2 "error" "Failed to clone VM"
-        error "Failed to create VM"
+    # Start the clone in background and capture the task ID
+    TASK_OUTPUT=$(eval "$CMD" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        show_progress 2 "error" "Failed to start clone"
+        error "Failed to create VM: $TASK_OUTPUT"
         return 1
     fi
+
+    # Extract UPID from output (format: UPID:node:XXXXXXXX:...)
+    UPID=$(echo "$TASK_OUTPUT" | grep -oP 'UPID:[^\s]+' | head -1)
+
+    if [ -n "$UPID" ]; then
+        # Monitor the task with progress bar
+        echo -ne "  Cloning progress: "
+
+        while true; do
+            # Check task status
+            TASK_STATUS=$(qm task status "$UPID" 2>/dev/null)
+
+            # Check if task is complete
+            if echo "$TASK_STATUS" | grep -q "exitstatus.*OK"; then
+                echo -e " ${GREEN}[100%]${NC} Complete"
+                break
+            elif echo "$TASK_STATUS" | grep -q "exitstatus"; then
+                # Task failed
+                echo -e " ${RED}[FAILED]${NC}"
+                show_progress 2 "error" "Clone task failed"
+                error "Clone operation failed"
+                return 1
+            fi
+
+            # Show a simple progress spinner
+            for i in / - \\ \|; do
+                echo -ne "\b$i"
+                sleep 0.2
+            done
+        done
+        echo ""
+    else
+        # Fallback: just wait for VM to exist
+        local wait_count=0
+        while [ $wait_count -lt 60 ]; do
+            if qm status "$NEW_VM_ID" &>/dev/null; then
+                break
+            fi
+            echo -ne "."
+            sleep 1
+            ((wait_count++))
+        done
+        echo ""
+    fi
+
+    show_progress 2 "done" "VM cloned successfully"
+    return 0
 }
 
 start_vm() {
@@ -271,11 +318,27 @@ run_vm_setup() {
         return 1
     fi
 
-    echo "Starting VM setup process..."
+    echo ""
+    echo "Next steps:"
+    echo ""
+    echo "  1. Complete VM setup (cloud-init, reboot, SSH):"
+    echo -e "     ${YELLOW}./jobs/ubuntu-vm-setup.sh $VM_IP${NC}"
+    echo ""
+    echo "  2. SSH directly:"
+    echo -e "     ${YELLOW}ssh ubadmin@$VM_IP${NC}"
+    echo ""
+    echo "================================================================================"
     echo ""
 
-    # Run the setup script
-    "$SETUP_SCRIPT" "$VM_IP"
+    read -p "Run ubuntu-vm-setup.sh now? [y/N]: " RUN_SETUP
+    echo ""
+
+    if [[ "$RUN_SETUP" =~ ^[Yy]$ ]]; then
+        # Run the setup script
+        "$SETUP_SCRIPT" "$VM_IP"
+    else
+        log "Skipping automated setup. Run manually when ready."
+    fi
 }
 
 ################################################################################
