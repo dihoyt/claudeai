@@ -131,10 +131,53 @@ display_template_info() {
 # Template Operations
 ################################################################################
 
-delete_template() {
-    log "Deleting template $TEMPLATE_ID..."
+get_disk_info() {
+    echo ""
+    info "Getting disk information for template $TEMPLATE_ID..."
+    echo ""
 
-    if qm destroy "$TEMPLATE_ID" --purge; then
+    # Show disk configuration
+    qm config "$TEMPLATE_ID" | grep -E "^(scsi|sata|virtio|ide)[0-9]:"
+    echo ""
+}
+
+ask_purge_disks() {
+    echo ""
+    echo "================================================================================"
+    info "Disk Deletion Options:"
+    echo "================================================================================"
+    echo ""
+    echo "  1. Delete configuration AND disks (--purge)"
+    echo "     • Removes the template completely"
+    echo "     • Deletes all associated disk images"
+    echo "     • Frees up storage space"
+    echo ""
+    echo "  2. Delete configuration ONLY (keep disks)"
+    echo "     • Removes the template configuration"
+    echo "     • Preserves disk images for potential recovery"
+    echo "     • Disks become orphaned and must be managed manually"
+    echo ""
+    echo "================================================================================"
+    echo ""
+
+    read -p "Do you want to delete the disks as well? [y/N]: " DELETE_DISKS
+    echo ""
+
+    if [[ "$DELETE_DISKS" =~ ^[Yy]$ ]]; then
+        PURGE_FLAG="--purge"
+        PURGE_STATUS="WITH DISKS"
+        warn "Disks will be permanently deleted!"
+    else
+        PURGE_FLAG=""
+        PURGE_STATUS="KEEP DISKS"
+        info "Disks will be preserved. You'll need to manage them manually."
+    fi
+}
+
+delete_template() {
+    log "Deleting template $TEMPLATE_ID ($PURGE_STATUS)..."
+
+    if qm destroy "$TEMPLATE_ID" $PURGE_FLAG; then
         log "Template $TEMPLATE_ID deleted successfully!"
         return 0
     else
@@ -164,6 +207,10 @@ main() {
     get_template_id
     get_template_info
     display_template_info
+
+    # Show disk information and ask about purge
+    get_disk_info
+    ask_purge_disks
 
     # Confirm deletion
     echo -e "${RED}WARNING: You are about to delete this template permanently!${NC}"
@@ -208,8 +255,16 @@ main() {
     echo "  Name:         $TEMPLATE_NAME"
     echo ""
     echo "  Status:       DELETED"
-    echo "  Disks:        PURGED"
+    echo "  Disks:        $PURGE_STATUS"
     echo ""
+    if [[ "$PURGE_STATUS" == "KEEP DISKS" ]]; then
+        echo "  NOTE: Disks were preserved. To view orphaned disks, use:"
+        echo "        lvs | grep -E \"vm-${TEMPLATE_ID}-\""
+        echo ""
+        echo "  To remove orphaned disks later:"
+        echo "        lvremove /dev/pve/vm-${TEMPLATE_ID}-disk-X"
+        echo ""
+    fi
     echo "================================================================================"
     echo ""
 }
