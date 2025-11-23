@@ -154,6 +154,24 @@ restart_cluster_services() {
     fi
 }
 
+restart_web_services() {
+    log "Restarting web UI services to restore access"
+
+    # Restart all PVE services to ensure clean state
+    systemctl restart pveproxy
+    systemctl restart pvedaemon
+    systemctl restart pvescheduler
+
+    log "Web UI services restarted"
+
+    echo ""
+    info "If you still cannot access the web UI:"
+    info "1. Clear your browser cache/cookies"
+    info "2. Try an incognito/private window"
+    info "3. Login with: root@pam (not root@pve)"
+    echo ""
+}
+
 verify_standalone() {
     log "Verifying standalone configuration"
 
@@ -194,12 +212,18 @@ main() {
     # Restart services in standalone mode
     restart_cluster_services
 
+    # Restart web services to ensure UI access
+    restart_web_services
+
     # Verify standalone mode
     verify_standalone
 
     # Done
+    echo ""
     log "Cluster configuration removed from $(hostname)"
     log "System is now running in standalone mode"
+    log "Web UI should be accessible at https://$(hostname -I | awk '{print $1}'):8006"
+    echo ""
 }
 
 main "$@"
