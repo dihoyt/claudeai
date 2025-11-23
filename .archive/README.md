@@ -441,3 +441,220 @@ Internet
    �
 Nginx (443/80) � SSL Termination
    �
+    � TacticalRMM API (Django/Gunicorn :8000)
+          �
+           � PostgreSQL (Database)
+           � Redis (Cache/Queue)
+   
+    � Frontend (Vue.js - Static Files)
+   
+    � MeshCentral (:4430)
+       �
+       Agents (Remote Access)
+
+Background Workers:
+ � Celery (Task Queue)
+ � Celery Beat (Scheduler)
+```
+
+### Service Ports
+- **80** - HTTP (redirects to HTTPS)
+- **443** - HTTPS (Nginx)
+- **4430** - MeshCentral (internal)
+- **8000** - TacticalRMM API (internal)
+- **5432** - PostgreSQL (localhost only)
+- **6379** - Redis (localhost only)
+
+---
+
+## Troubleshooting
+
+### View Service Logs
+```bash
+# TacticalRMM API
+journalctl -xeu tacticalrmm -n 50
+
+# Celery worker
+journalctl -xeu celery -n 50
+
+# Celery beat
+journalctl -xeu celerybeat -n 50
+
+# MeshCentral
+journalctl -xeu meshcentral -n 50
+
+# Nginx
+journalctl -xeu nginx -n 50
+
+# All services
+journalctl -xeu tacticalrmm -xeu celery -xeu celerybeat -xeu meshcentral -xeu nginx
+```
+
+### View Application Logs
+```bash
+# Celery logs
+tail -f /var/log/celery/celery.log
+tail -f /var/log/celery/beat.log
+
+# Installation log
+cat /var/log/tacticalrmm-install.log
+```
+
+### Common Issues
+
+**Services not starting:**
+```bash
+# Check service status
+systemctl status tacticalrmm
+
+# View detailed logs
+journalctl -xeu tacticalrmm --no-pager
+```
+
+**Nginx fails to start:**
+- Usually caused by missing SSL certificates
+- Ensure certificates are in `/etc/nginx/ssl/`
+- Test configuration: `nginx -t`
+
+**Database connection errors:**
+- Check PostgreSQL is running: `systemctl status postgresql`
+- Verify credentials in `/rmm/api/tacticalrmm/tacticalrmm/local_settings.py`
+- Test connection: `sudo -u postgres psql -d tacticalrmm`
+
+**Redis connection errors:**
+- Check Redis is running: `systemctl status redis-server`
+- Verify password in local_settings.py matches Redis config
+
+**DNS not resolving:**
+- Add entries to `/etc/hosts` or configure DNS server
+- Test resolution: `host rmm.tacticalrmm.hoyt.local`
+
+### Restart All Services
+```bash
+systemctl restart postgresql redis-server meshcentral tacticalrmm celery celerybeat nginx
+```
+
+### Complete Reinstallation
+If you need to start over:
+```bash
+# Stop all services
+systemctl stop tacticalrmm celery celerybeat meshcentral nginx
+
+# Drop database
+sudo -u postgres dropdb tacticalrmm
+
+# Remove installation directories
+rm -rf /rmm /meshcentral /var/www/rmm
+
+# Remove users
+userdel -r tactical
+userdel -r meshcentral
+
+# Run installation script again
+./install-tactical-rmm.sh
+```
+
+---
+
+## Security Considerations
+
+### Generated Passwords
+The installation script generates cryptographically secure random passwords for:
+- PostgreSQL database user
+- Redis authentication
+- Django admin user
+- MeshCentral token
+
+All passwords are saved to `/root/tacticalrmm-credentials.txt` with 600 permissions.
+
+### Firewall
+UFW is configured to allow only:
+- SSH (22)
+- HTTP (80)
+- HTTPS (443)
+
+All other ports are denied by default.
+
+### SSL/TLS
+- Nginx requires SSL certificates before it will start
+- All HTTP traffic is redirected to HTTPS
+- TLS 1.2 and 1.3 only
+- Strong cipher suites configured
+
+### Database Security
+- PostgreSQL only accepts local connections
+- Dedicated database user with limited permissions
+- Password authentication required
+
+### Redis Security
+- Bound to localhost only
+- Password authentication enabled
+- Not accessible from external network
+
+---
+
+## Maintenance
+
+### Backup
+Critical files and directories to backup:
+```bash
+/root/tacticalrmm-credentials.txt
+/rmm/api/tacticalrmm/tacticalrmm/local_settings.py
+/etc/nginx/ssl/
+/meshcentral/meshcentral-data/
+```
+
+PostgreSQL database:
+```bash
+sudo -u postgres pg_dump tacticalrmm > tacticalrmm-backup-$(date +%Y%m%d).sql
+```
+
+### Updates
+To update TacticalRMM:
+```bash
+cd /rmm
+sudo -u tactical git pull
+sudo -u tactical /bin/bash <<EOF
+source /rmm/env/bin/activate
+pip install -r api/tacticalrmm/requirements.txt
+cd api/tacticalrmm
+python manage.py migrate
+python manage.py collectstatic --noinput
+deactivate
+EOF
+
+# Restart services
+systemctl restart tacticalrmm celery celerybeat
+
+# Update frontend
+cd /rmm/web
+npm install
+npm run build
+rm -rf /var/www/rmm/*
+cp -r dist/* /var/www/rmm/
+chown -R www-data:www-data /var/www/rmm
+```
+
+---
+
+## References
+
+- [TacticalRMM Official Documentation](https://docs.tacticalrmm.com/)
+- [TacticalRMM GitHub Repository](https://github.com/amidaware/tacticalrmm)
+- [MeshCentral Documentation](https://meshcentral.com/info/)
+- [Django Documentation](https://docs.djangoproject.com/)
+- [Nginx Documentation](https://nginx.org/en/docs/)
+
+---
+
+## License
+
+These scripts are provided as-is for use with TacticalRMM. TacticalRMM itself is licensed under the AGPL license.
+
+## Contributing
+
+To improve these scripts:
+1. Test changes on a fresh Ubuntu 24.04 installation
+2. Verify with the verification script
+3. Update documentation as needed
+4. Ensure all security best practices are maintained
