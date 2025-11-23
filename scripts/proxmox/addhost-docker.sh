@@ -273,9 +273,11 @@ wait_for_ip() {
         ((attempt++))
     done
 
-    show_progress 4 "error" "Timeout waiting for IP address"
-    warn "Note: QEMU Guest Agent must be installed and running in the VM"
-    return 1
+    # Don't fail the script if we can't get IP - just warn
+    show_progress 4 "done" "VM is running (IP not detected)"
+    warn "Could not detect IP address. QEMU Guest Agent may not be running yet."
+    VM_IP=""
+    return 0
 }
 
 finalize() {
