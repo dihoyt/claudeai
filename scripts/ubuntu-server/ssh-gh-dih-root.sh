@@ -5,13 +5,14 @@
 #
 # Imports SSH keys from GitHub user dihoyt and configures SSH to allow root
 # login via authorized_keys only, disabling password authentication.
+
 #
 # Usage: ./ssh-gh-dih-root.sh
 ################################################################################
 
 set -e
 
-# Configuration
+# Configuration REPLACE dihoyt with desired GitHub username!!! Otherwise, i'll have access to your vm's with my keys :)
 GITHUB_USER="dihoyt"
 
 # Color codes for output
